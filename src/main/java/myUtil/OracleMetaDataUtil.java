@@ -1,25 +1,34 @@
 package myUtil;
 
-import com.alibaba.druid.util.StringUtils;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import lombok.experimental.Accessors;
 import myUtil.constants.MetaDataConstants;
-import myUtil.constants.MySQLDataType;
+import myUtil.constants.OracleDataType;
 import myUtil.entity.DatabaseMetaData;
 import myUtil.entity.FieldMetadata;
-import myUtil.entity.IndexMetaData;
 import myUtil.entity.TableMetaData;
-import myUtil.utilInterface.DatabaseUtil;
+import myUtil.utilInterface.DatabaseMetaDataUtil;
 
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 
-public class MysqlUtil implements DatabaseUtil {
+@NoArgsConstructor
+@Accessors
+@Data
+public class OracleMetaDataUtil implements DatabaseMetaDataUtil {
 
     private Connection connection;
-    MysqlUtil(Connection connection){
+
+    OracleMetaDataUtil(Connection connection) {
         this.connection = connection;
     }
+
     @Override
     public String getUserName() throws SQLException {
         return connection.getMetaData().getUserName();
@@ -37,7 +46,7 @@ public class MysqlUtil implements DatabaseUtil {
 
     @Override
     public String getDatabaseName() throws SQLException {
-        return getCatalog();
+        return getScheme();
     }
 
     @Override
@@ -47,17 +56,17 @@ public class MysqlUtil implements DatabaseUtil {
 
     @Override
     public void setMetaDBbyConnection(DatabaseMetaData databaseMetaData) throws SQLException {
-        databaseMetaData.setName(connection.getCatalog());
+        databaseMetaData.setName(getUserName());
         java.sql.DatabaseMetaData metaData = connection.getMetaData();
         String[] types = {MetaDataConstants.tableType_Table};//仅提取表结构
-        ResultSet tables = metaData.getTables(connection.getCatalog(), null, "%", types);
+        ResultSet tables = metaData.getTables(connection.getCatalog(), databaseMetaData.getName(), "%", types);
         List<String> tableName = new ArrayList<>();
         while (tables.next()) {
             tableName.add(tables.getString(MetaDataConstants.metaDataKey_tableName));  //表名
         }
         TreeMap<String, TableMetaData> tableMap = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
         for (String s : tableName) {
-            tableMap.put(s, getTableMetaDataByDatabaseMetaData(metaData, connection.getCatalog(), s));
+            tableMap.put(s, getTableMetaDataByDatabaseMetaData(metaData, getDatabaseName(), s));
         }
         databaseMetaData.setTables(tableMap);
     }
@@ -66,19 +75,20 @@ public class MysqlUtil implements DatabaseUtil {
     public TableMetaData getTableMetaDataByDatabaseMetaData(java.sql.DatabaseMetaData metaData, String dataBaseName, String tableName) throws SQLException {
         TableMetaData metaTable = new TableMetaData();
         metaTable.setName(tableName);
-        ResultSet columns = metaData.getColumns(dataBaseName, null, tableName, null);
+        ResultSet columns = metaData.getColumns(null, dataBaseName, tableName, null);
         Map<String, FieldMetadata> columnMap = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
         TreeMap<Short, FieldMetadata> keyMap = new TreeMap<>();
         while (columns.next()) {
             FieldMetadata fieldMetadata = new FieldMetadata();
             FieldMetadataMapping(columns, fieldMetadata);
-            if ((fieldMetadata.getDataType() == MySQLDataType.DOUBLE || fieldMetadata.getDataType() == MySQLDataType.FLOAT) && fieldMetadata.getDecimalLength() == 0) {
+            if (fieldMetadata.getDataType() == OracleDataType.NUMBER && fieldMetadata.getLength() == 0 && fieldMetadata.getDecimalLength() == -127) {
+                fieldMetadata.setLength(38);
                 fieldMetadata.setDecimalLength(6);
-            }
+            }//若长度精度为0，-127则表示NUMBER未声明长度与精度，设为默认值
             columnMap.put(fieldMetadata.getName(), fieldMetadata);
         }
         metaTable.setColumns(columnMap);
-        ResultSet keys = metaData.getPrimaryKeys(dataBaseName, null, tableName);
+        ResultSet keys = metaData.getPrimaryKeys(null, dataBaseName, tableName);
         while (keys.next()) {
             String columnName = keys.getString(MetaDataConstants.metaDataKey_columnName);//列名
             short keySeq = keys.getShort(MetaDataConstants.metaDataKey_keySeq);//列序号

@@ -5,11 +5,10 @@ import myUtil.entity.DatabaseMetaData;
 import myUtil.entity.FieldMetadata;
 import myUtil.entity.TableMetaData;
 
-import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 
-public interface DatabaseUtil {
+public interface DatabaseMetaDataUtil {
     String getUserName() throws SQLException;
 
     String getScheme() throws SQLException;
